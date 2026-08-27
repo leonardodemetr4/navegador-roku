@@ -1,45 +1,51 @@
 import os
 import io
-from flask import Flask, request, send_file, redirect
+from flask import Flask, request, send_file
 from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    # Se entrar no link puro, ele pula direto para o Google
-    return redirect("/browse?url=https://www.google.com")
-
-@app.route('/browse')
-def browse():
-    # Pega a URL. Se não vier nada, usa o Google.
-    url = request.args.get('url')
-    if not url or url.strip() == "":
-        url = "https://www.google.com"
-        
-    x = request.args.get('x')
-    y = request.args.get('y')
-
+# Função que tira o print
+def capturar_tela(url, x=None, y=None):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page(viewport={'width': 1280, 'height': 720})
             
-            # Garante que o link seja válido
+            # Se a URL não começar com http, ele coloca
             if not url.startswith("http"):
                 url = "https://" + url
-
+                
             page.goto(url, wait_until="load", timeout=30000)
 
-            if x and y and x != "None" and y != "None":
+            # Se houver clique
+            if x and y and x != "None":
                 page.mouse.click(float(x), float(y))
                 page.wait_for_timeout(2000)
 
-            screenshot = page.screenshot()
+            img = page.screenshot()
             browser.close()
-            return send_file(io.BytesIO(screenshot), mimetype='image/png')
+            return img
     except Exception as e:
-        return f"Erro: {str(e)}", 500
+        print(f"Erro: {e}")
+        return None
+
+# Rota principal (Agora ela manda a foto do Google direto!)
+@app.route('/')
+def home():
+    img_data = capturar_tela("https://www.google.com")
+    return send_file(io.BytesIO(img_data), mimetype='image/png')
+
+# Rota de navegação
+@app.route('/browse')
+def browse():
+    url = request.args.get('url', 'https://www.google.com')
+    x = request.args.get('x')
+    y = request.args.get('y')
+    img_data = capturar_tela(url, x, y)
+    if img_data:
+        return send_file(io.BytesIO(img_data), mimetype='image/png')
+    return "Erro", 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
